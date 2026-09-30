@@ -1,0 +1,6 @@
+LIBRARY "zonetrace"
+EXPORTS
+
+    expCreatePolPlugin          @1
+    expDestroyPlugin            @2
+    expGetInterfaceVersion      @3

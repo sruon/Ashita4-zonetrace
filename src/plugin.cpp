@@ -213,25 +213,38 @@ namespace zonetrace
         }
 
     private:
-        // names the character once per zone, so the log can be matched to the server's by charid
+        // names the character once per zone connection, so the log can be matched to the server's by charid
         void identify()
         {
-            if (core_ == nullptr || !sockets::answered())
+            const auto connection = sockets::connections();
+            if (core_ == nullptr || connection == loggedConnection_)
                 return;
+
+            if (connection != seenConnection_)
+            {
+                seenConnection_ = connection;
+                seenAt_         = ::GetTickCount64();
+            }
 
             Identity identity{};
-            if (!readIdentity(core_, &identity) || (identity.id == lastId_ && identity.zone == lastZone_))
+            if (!readIdentity(core_, &identity))
                 return;
 
-            lastId_   = identity.id;
-            lastZone_ = identity.zone;
+            // the zone id updates a moment after the server answers; entering a mog house never changes it
+            if (identity.zone == lastZone_ && ::GetTickCount64() - seenAt_ < 2000)
+                return;
+
+            lastZone_         = identity.zone;
+            loggedConnection_ = connection;
 
             char buffer[96];
             snprintf(buffer, sizeof(buffer), " char   %s (charid %u) in zone %u", identity.name, identity.id, identity.zone);
             log_.line(timestamp() + buffer);
         }
 
-        uint32_t lastId_{};
+        uint32_t loggedConnection_{};
+        uint32_t seenConnection_{};
+        ULONGLONG seenAt_{};
         uint16_t lastZone_{};
         IAshitaCore* core_{};
         std::atomic<bool> stop_{};

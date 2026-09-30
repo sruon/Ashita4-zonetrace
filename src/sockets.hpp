@@ -11,7 +11,7 @@ namespace zonetrace
         // hooks bind, sendto, recvfrom and closesocket in FFXiMain's import table
         auto install(LineSink sink) -> Attempt;
 
-        // true once the server has answered on any game socket, i.e. a character is in a zone
-        auto answered() -> bool;
+        // how many zone connections the server has answered so far
+        auto connections() -> uint32_t;
     } // namespace sockets
 } // namespace zonetrace

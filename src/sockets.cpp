@@ -47,7 +47,7 @@ namespace zonetrace::sockets
         std::mutex mutex_;
         std::map<SOCKET, Socket> sockets_;
         uint16_t lastPort_{};
-        std::atomic<bool> answered_{};
+        std::atomic<uint32_t> connections_{};
 
         template <typename... Args>
         void emit(const char* pattern, Args... args)
@@ -153,14 +153,16 @@ namespace zonetrace::sockets
                     if (result > 0)
                     {
                         if (entry.received == 0)
+                        {
+                            ++connections_;
                             emit("port %u: zone-in answered after %.1f s and %u requests", entry.port, seconds(entry.opened, now), entry.sent);
+                        }
                         else if (entry.silent)
                             emit("port %u: server is answering again after %.1f s", entry.port, seconds(entry.lastReceive, now));
 
                         ++entry.received;
                         entry.lastReceive = now;
                         entry.silent      = false;
-                        answered_         = true;
                     }
                     else if (error != 0 && error != WSAEWOULDBLOCK && error != entry.lastError)
                     {
@@ -199,9 +201,9 @@ namespace zonetrace::sockets
         }
     } // namespace
 
-    auto answered() -> bool
+    auto connections() -> uint32_t
     {
-        return answered_;
+        return connections_;
     }
 
     auto install(LineSink sink) -> Attempt

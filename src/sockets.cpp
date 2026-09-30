@@ -7,6 +7,7 @@
 #include <WS2tcpip.h>
 #include <Windows.h>
 
+#include <atomic>
 #include <cstdio>
 #include <map>
 #include <mutex>
@@ -45,6 +46,8 @@ namespace zonetrace::sockets
 
         std::mutex mutex_;
         std::map<SOCKET, Socket> sockets_;
+        uint16_t lastPort_{};
+        std::atomic<bool> answered_{};
 
         template <typename... Args>
         void emit(const char* pattern, Args... args)
@@ -89,6 +92,11 @@ namespace zonetrace::sockets
                 entry.opened     = ::GetTickCount64();
                 sockets_[socket] = entry;
                 emit("bound local port %u", port);
+
+                // a server that ties the session to the client's address will not recognise the new one
+                if (lastPort_ != 0 && lastPort_ != port)
+                    emit("LOCAL PORT CHANGED %u -> %u since the previous zone", lastPort_, port);
+                lastPort_ = port;
             }
             else
             {
@@ -152,6 +160,7 @@ namespace zonetrace::sockets
                         ++entry.received;
                         entry.lastReceive = now;
                         entry.silent      = false;
+                        answered_         = true;
                     }
                     else if (error != 0 && error != WSAEWOULDBLOCK && error != entry.lastError)
                     {
@@ -189,6 +198,11 @@ namespace zonetrace::sockets
             return realClose(socket);
         }
     } // namespace
+
+    auto answered() -> bool
+    {
+        return answered_;
+    }
 
     auto install(LineSink sink) -> Attempt
     {

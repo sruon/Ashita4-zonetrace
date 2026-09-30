@@ -21,11 +21,13 @@ The lines that matter when something goes wrong:
 
 - `BLACK SCREEN, <server> never answered N zone-in requests in X s` when a socket is closed without a single answer.
 - `nothing from <server> for X s, still sending` when the server goes quiet mid-zone, and `DISCONNECT, ...` if the game then gives up.
-- `local port N is taken`: another client on this PC holds the port, the game retries at +256. A different port than on the previous zone is worth noting.
+- `local port N is taken`: another client on this PC holds the port, the game retries at +256.
+- `LOCAL PORT CHANGED A -> B since the previous zone`: the game came back from a different port than it left with. A server that ties the session to the client's address will not recognise it.
+- `char   Name (charid N) in zone Z`: written once per zone, to match this log against the server's.
 - `receive error 10054`: an ICMP "port unreachable" came back for something the game sent.
 - `server assigned slot N`: the server picked the port. If this changes while in game, the next zone uses a different port.
 
-Times are local. The first line of each log gives the UTC offset, since server logs are usually in UTC.
+Times are local. The first line of each log states the time zone and its UTC offset, since server logs are usually in UTC.
 
 ## Use
 

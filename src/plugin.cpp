@@ -6,6 +6,7 @@
 #include "Ashita.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <string_view>
 #include <thread>
 
@@ -32,16 +33,55 @@ namespace zonetrace
             return directory;
         }
 
+        struct Identity
+        {
+            uint32_t id;
+            uint16_t zone;
+            char name[24];
+        };
+
+        // reads the player's own party slot. guarded: the game rewrites this memory while zoning
+        bool readIdentity(IAshitaCore* core, Identity* identity)
+        {
+            __try
+            {
+                const auto memory = core->GetMemoryManager();
+                const auto party  = memory != nullptr ? memory->GetParty() : nullptr;
+                if (party == nullptr || party->GetMemberIsActive(0) == 0)
+                    return false;
+
+                const auto name = party->GetMemberName(0);
+                if (name == nullptr)
+                    return false;
+
+                identity->id   = party->GetMemberServerId(0);
+                identity->zone = party->GetMemberZone(0);
+                for (size_t i = 0; i + 1 < sizeof(identity->name) && name[i] >= 0x20 && name[i] < 0x7F; ++i)
+                    identity->name[i] = name[i];
+
+                return identity->id != 0 && identity->name[0] != 0;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+
         // server logs are usually in UTC, the lines here are local time
         auto clock() -> std::string
         {
             SYSTEMTIME local{};
-            SYSTEMTIME utc{};
             ::GetLocalTime(&local);
-            ::GetSystemTime(&utc);
 
-            char buffer[96];
-            snprintf(buffer, sizeof(buffer), "%04u-%02u-%02u, local %02u:%02u:%02u is UTC %02u:%02u:%02u", local.wYear, local.wMonth, local.wDay, local.wHour, local.wMinute, local.wSecond, utc.wHour, utc.wMinute, utc.wSecond);
+            TIME_ZONE_INFORMATION zone{};
+            const auto daylight = ::GetTimeZoneInformation(&zone) == TIME_ZONE_ID_DAYLIGHT;
+            const auto offset   = -(zone.Bias + (daylight ? zone.DaylightBias : zone.StandardBias)); // minutes east of UTC
+
+            char name[64]{};
+            ::WideCharToMultiByte(CP_ACP, 0, daylight ? zone.DaylightName : zone.StandardName, -1, name, sizeof(name) - 1, nullptr, nullptr);
+
+            char buffer[160];
+            snprintf(buffer, sizeof(buffer), "%04u-%02u-%02u, all times are local: UTC%c%02d:%02d (%s)", local.wYear, local.wMonth, local.wDay, offset < 0 ? '-' : '+', abs(offset) / 60, abs(offset) % 60, name);
             return buffer;
         }
     } // namespace
@@ -122,6 +162,7 @@ namespace zonetrace
                     }
 
                     port::poll();
+                    identify();
 
                     const auto waiting = (!ports && portMisses < kAttempts) || (!sockets && socketMisses < kAttempts);
                     std::this_thread::sleep_for(std::chrono::milliseconds(waiting ? 20 : 500));
@@ -172,6 +213,26 @@ namespace zonetrace
         }
 
     private:
+        // names the character once per zone, so the log can be matched to the server's by charid
+        void identify()
+        {
+            if (core_ == nullptr || !sockets::answered())
+                return;
+
+            Identity identity{};
+            if (!readIdentity(core_, &identity) || (identity.id == lastId_ && identity.zone == lastZone_))
+                return;
+
+            lastId_   = identity.id;
+            lastZone_ = identity.zone;
+
+            char buffer[96];
+            snprintf(buffer, sizeof(buffer), " char   %s (charid %u) in zone %u", identity.name, identity.id, identity.zone);
+            log_.line(timestamp() + buffer);
+        }
+
+        uint32_t lastId_{};
+        uint16_t lastZone_{};
         IAshitaCore* core_{};
         std::atomic<bool> stop_{};
         std::thread watcher_;

@@ -67,7 +67,14 @@ Logs go to `polplugins\logs\zonetrace_<date>_<time>_<pid>.log`, one per game pro
 
 ## Build
 
-`build.bat [outdir]` loads vcvars32 and builds with CMake/Ninja. Needs `ASHITA4_SDK_PATH` (defaults to `E:\Ashita-v4beta\plugins\sdk`). A running client holds the dll open, build to another folder while one is up.
+From an x86 Native Tools prompt, with `ASHITA4_SDK_PATH` pointing at Ashita's `plugins\sdk`:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DZONETRACE_OUTPUT_DIR=<folder>
+cmake --build build
+```
+
+`ZONETRACE_OUTPUT_DIR` defaults to `E:/Ashita-v4beta/polplugins`. A running client holds the dll open, so build somewhere else while one is up.
 
 ## Notes
 

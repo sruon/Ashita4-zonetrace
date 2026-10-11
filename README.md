@@ -41,18 +41,14 @@ Lines to look for:
 
 Times are local, the first line of each log has the UTC offset.
 
-## Comparing with the server (LSB)
+## Comparing with an LSB server
 
-`accounts_sessions.session_key` holds the key: bytes 0..15 are the value, bytes 16..19 the counter (little-endian). The map adds 2 per zone. With the default lobby seed a clean login reads `AD5DE058`.
+LSB logs the same numbers:
 
-Fingerprint of the value:
+- xi_connect at character select: `data_session: ... key value XXXXXXXX, key counter XXXXXXXX`. Matches `session key value fingerprint` and the `zone key counter` logged when the game connects to its first zone.
+- xi_map on every zone change: `map_session: key counter for <name> (charid N) is now XXXXXXXX`. Matches the next `zone key counter`.
 
-```python
-h = 2166136261
-for b in session_key[:16]:
-    h = ((h ^ b) * 16777619) & 0xFFFFFFFF
-print(f"{h:08X}")
-```
+If either differs, the server and the game hold different keys: the zone-in is answered but the character never loads.
 
 ## Use
 

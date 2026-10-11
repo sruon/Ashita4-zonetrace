@@ -4,9 +4,7 @@
 
 namespace zonetrace
 {
-    // the game's zone receive loop counts every datagram and sub-packet it throws away, by reason, on its zone object.
-    // a zone-in that is answered but never loads shows here as either wrong-key drops (the server's key differs) or
-    // old-sequence drops (the server's packet sequence fell behind what the game already accepted)
+    // the game counts the datagrams and sub-packets it drops, per reason, on its zone object
     namespace recv
     {
         // in the receive loop, the source address check against the zone object:

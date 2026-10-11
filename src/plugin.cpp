@@ -138,7 +138,7 @@ namespace zonetrace
             // POL plugins load before polcore and the game; both unpack themselves, so keep trying until the hooks take
             stop_    = false;
             watcher_ = std::thread([this] {
-                // a module that is loaded but offers nothing to hook for this long is not going to
+                // give up on a module that still has nothing to hook after this many tries
                 constexpr int kAttempts = 500;
 
                 int portMisses    = 0;
@@ -158,7 +158,7 @@ namespace zonetrace
                         const auto attempt = port::install(&write);
                         ports              = attempt == Attempt::Hooked;
                         if (attempt == Attempt::NotFound && ++portMisses == kAttempts)
-                            log_.line(timestamp() + " port   cannot find polcore's port chooser: client updated, or another plugin (polsniff) already hooked it");
+                            log_.line(timestamp() + " port   cannot find polcore's port chooser: client updated, or another plugin already hooked it");
                     }
 
                     if (!sockets && socketMisses < kAttempts)
@@ -166,7 +166,7 @@ namespace zonetrace
                         const auto attempt = sockets::install(&write);
                         sockets            = attempt == Attempt::Hooked;
                         if (attempt == Attempt::NotFound && ++socketMisses == kAttempts)
-                            log_.line(timestamp() + " socket cannot hook the game's sockets: another plugin (polsniff) already hooked them");
+                            log_.line(timestamp() + " socket cannot hook the game's sockets: another plugin already hooked them");
                     }
 
                     if (!keys && keyMisses < kAttempts)
@@ -264,7 +264,7 @@ namespace zonetrace
             Identity identity{};
             if (!readIdentity(core_, &identity))
             {
-                // answered but nothing loads: the game is dropping answers it cannot decrypt
+                // answered but no character loaded
                 if (connection != warnedConnection_ && ::GetTickCount64() - seenAt_ > 15000)
                 {
                     warnedConnection_ = connection;

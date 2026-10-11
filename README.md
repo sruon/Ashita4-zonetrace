@@ -1,10 +1,10 @@
 # zonetrace
 
-Ashita v4 POL plugin for chasing black screens and disconnects on zone. It records which local UDP port the game uses for each zone connection and whether the server answers. Nothing of the traffic itself is logged, only addresses, counts and timings, so the log is safe to hand to a server admin.
+Ashita v4 POL plugin to troubleshoot black screens and disconnects when zoning. It logs the local UDP port the game uses for each zone, whether the server answers, the zone key and the packets the game drops. Packet contents and key material are never logged.
 
-## What it shows
+## Log
 
-The game opens a new UDP socket for every zone. It asks PlayOnline (polcore) for the local port, binds it, and repeats its zone-in request until the server answers. A black screen is that request never being answered.
+The game opens a new UDP socket for every zone, asks polcore for the local port, binds it and repeats its zone-in request until the server answers.
 
 ```
 23:01:35.838 port   hooked polcore.dll: game index -1, port 54090 (1 getter slots, setter ok)
@@ -17,35 +17,35 @@ The game opens a new UDP socket for every zone. It asks PlayOnline (polcore) for
 23:34:31.811 socket closed port 54347 to 203.0.113.10:54230 after 1960.4 s, sent 4893, received 4889
 ```
 
-The lines that matter when something goes wrong:
+Lines to look for:
 
-- `BLACK SCREEN, <server> never answered N zone-in requests in X s` when a socket is closed without a single answer.
-- `BLACK SCREEN so far, ...` when a zone-in is still unanswered after 10 s, written while waiting so it survives the client being killed.
-- `datagram from <address> while talking to <server>`: something other than the zone server reached the socket, typically the previous zone server still sending.
-- `the game has not sent anything for X s`: the client itself stalled or gave up, as opposed to the server going quiet.
-- `zone-in answered 15 s ago but no character loaded`: answers arrive but the game cannot use them, usually a key mismatch. Compare the `key` fingerprint with the server's.
-- `nothing from <server> for X s, still sending` when the server goes quiet mid-zone, and `DISCONNECT, ...` if the game then gives up.
+- `BLACK SCREEN, <server> never answered N zone-in requests in X s`: socket closed without a single answer.
+- `BLACK SCREEN so far, ...`: zone-in still unanswered after 10 s. Written while waiting, so it is there even if the client gets killed.
+- `zone-in answered 15 s ago but no character loaded`: answers arrive but the game can't use them. Followed by `recv   drops so far:`.
+- `datagram from <address> while talking to <server>`: something other than the zone server reached the socket.
+- `the game has not sent anything for X s`: the client stalled, not the server.
+- `nothing from <server> for X s, still sending`, then `DISCONNECT, ...` if the game gives up.
 - `local port N is taken`: another client on this PC holds the port, the game retries at +256.
-- `LOCAL PORT CHANGED A -> B since the previous zone`: the game came back from a different port than it left with. A server that ties the session to the client's address will not recognise it.
-- `char   Name (charid N) in zone Z`: written once per zone, to match this log against the server's.
-- `receive error 10054`: an ICMP "port unreachable" came back for something the game sent.
-- `server assigned slot N`: the server picked the port. If this changes while in game, the next zone uses a different port.
-- `session key value fingerprint XXXXXXXX`: a hash of the 16-byte value the game builds its zone cipher key from, logged whenever PlayOnline hands out a new one. The game takes the value current at character select. The value itself is never logged.
+- `LOCAL PORT CHANGED A -> B since the previous zone`: the game came back from a different port.
+- `server assigned slot N`: the server picked the port.
+- `receive error 10054`: ICMP port unreachable for something the game sent.
+- `char   Name (charid N) in zone Z`: once per zone, to match against the server logs.
+- `session key value fingerprint XXXXXXXX`: FNV-1a of the 16-byte value the zone key is built from. Logged when PlayOnline hands out a new one.
+- `zone key counter XXXXXXXX (+N)`: the counter hashed with that value into the zone key. Steps during the lobby, then +2 per zone.
+- `recv   dropped ...`: packets the game threw away, counted by the game itself:
+  - `wrong key`: payload does not check out after decrypting, the server's key differs.
+  - `malformed`: bad size or does not decompress.
+  - `old datagram`: sequence not newer than the last accepted one (only checked in state 3).
+  - `empty packet`, `old sub-packet`: sub-packet of size 0, or sync not newer than the last accepted datagram.
+  - `no handler`: packet the game does not handle. Common in normal play, never logged on its own.
 
-- `zone key counter XXXXXXXX (+N)`: the other half of the zone cipher key. The lobby code adds 1 per lobby request and 1 per success reply, 1 per error reply only on the name check, world list, rename and GM move requests, then 2 per zone. The server cannot see it and keeps its own copy, so any lobby step it did not account for gives the game a key it cannot decrypt with. The counter is not secret: on servers that hand out no key value the whole key is constants plus this counter.
+Times are local, the first line of each log has the UTC offset.
 
-- `recv   dropped N wrong key, N old datagram, ... (server sequence XXXX accepted, server acked XXXX, game at XXXX, state N)`: the game threw away packets the server sent. The game counts these itself, by reason:
-  - `wrong key`: the payload did not check out after decrypting, the server's key differs from the game's.
-  - `malformed`: bad size or the payload did not decompress.
-  - `old datagram`: the server's datagram sequence was not newer than the last one the game accepted (only checked in state 3).
-  - `empty packet`, `old sub-packet`: a sub-packet of size 0, or one whose sync is not newer than the last accepted datagram.
-  - `no handler`: a packet the game does not handle. Common in normal play, so it never triggers a line by itself.
+## Comparing with the server (LSB)
 
-  A stream of wrong-key or old-datagram drops while stuck on the black screen names the cause. The `char` warning for a zone-in that never loads is followed by `recv   drops so far:` with the totals for that zone.
+`accounts_sessions.session_key` holds the key: bytes 0..15 are the value, bytes 16..19 the counter (little-endian). The map adds 2 per zone. With the default lobby seed a clean login reads `AD5DE058`.
 
-For the counter, the server's value at character select is bytes 16..19 of `accounts_sessions.session_key` (little-endian), and the map adds 2 per zone. On LSB with the stock loader a clean login reads `AD5DE058` on both sides (lobby seed `AD5DE04F` plus 9 steps); after a lobby error and a retry the client is higher.
-
-To compare on the server, hash the first 16 bytes of the character's `accounts_sessions.session_key` the same way (FNV-1a, 32-bit):
+Fingerprint of the value:
 
 ```python
 h = 2166136261
@@ -53,8 +53,6 @@ for b in session_key[:16]:
     h = ((h ^ b) * 16777619) & 0xFFFFFFFF
 print(f"{h:08X}")
 ```
-
-Times are local. The first line of each log states the time zone and its UTC offset, since server logs are usually in UTC.
 
 ## Use
 
@@ -65,15 +63,13 @@ Copy `zonetrace.dll` into Ashita's `polplugins` folder and enable it in the boot
 zonetrace = 1
 ```
 
-One log per game process in `polplugins\logs\zonetrace_<date>_<time>_<pid>.log`. In game, `/zonetrace mark <text>` writes a labelled line, handy right after a black screen.
-
-Do not load it together with polsniff: both hook the same places, and whichever loads second finds nothing to hook. zonetrace says so in its log and stops trying after ten seconds.
+Logs go to `polplugins\logs\zonetrace_<date>_<time>_<pid>.log`, one per game process. `/zonetrace mark <text>` adds a labelled line.
 
 ## Build
 
-`build.bat [outdir]` loads vcvars32 and builds with CMake/Ninja. Needs `ASHITA4_SDK_PATH` (defaults to `E:\Ashita-v4beta\plugins\sdk`). Running clients hold the dll open, so pass a staging folder while they are up.
+`build.bat [outdir]` loads vcvars32 and builds with CMake/Ninja. Needs `ASHITA4_SDK_PATH` (defaults to `E:\Ashita-v4beta\plugins\sdk`). A running client holds the dll open, build to another folder while one is up.
 
 ## Notes
 
-- The polcore hook is found by signature and matches the current retail `polcore.dll`. If a client update moves it, the socket lines still work; only the `port` lines go missing.
-- The game's sockets are hooked through FFXiMain's import table, so only the game's own traffic is seen.
+- Everything is found by signature in the retail `polcore.dll` and `FFXiMain.dll`. If an update moves something, that part says so in the log and the rest keeps working.
+- Sockets are hooked through FFXiMain's import table, so only the game's own traffic is seen.

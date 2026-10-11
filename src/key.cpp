@@ -89,7 +89,7 @@ namespace zonetrace::key
 
     void poll()
     {
-        // not secret: on servers that hand out no key value the whole key is constants plus this counter
+        // the counter alone is not secret
         if (mainSystem_ != nullptr)
         {
             if (const auto current = counter(); current != 0 && current != lastCounter_)

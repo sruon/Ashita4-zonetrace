@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project(zonetrace CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 find_package(AshitaSDK REQUIRED)
@@ -16,6 +18,7 @@ add_library(zonetrace MODULE
     "src/memory.cpp"
     "src/memory.hpp"
     "src/plugin.cpp"
+    "src/plugin.hpp"
     "src/port.cpp"
     "src/port.hpp"
     "src/recv.cpp"

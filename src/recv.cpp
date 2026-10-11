@@ -172,7 +172,7 @@ void poll()
         std::memcpy(last_, snapshot.drops, sizeof(last_));
         const auto dropped = std::any_of(
             snapshot.drops,
-            snapshot.drops + kReasons - 1,
+            snapshot.drops + kReasons,
             [](uint32_t count)
             {
                 return count != 0;
@@ -185,8 +185,7 @@ void poll()
         return;
     }
 
-    // packets without a handler come and go in normal play, they only show alongside the others
-    if (std::memcmp(last_, snapshot.drops, sizeof(uint32_t) * (kReasons - 1)) == 0)
+    if (std::memcmp(last_, snapshot.drops, sizeof(last_)) == 0)
     {
         return;
     }

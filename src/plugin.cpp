@@ -284,24 +284,6 @@ bool ZoneTrace::HandleCommand(int32_t mode, const char* command, bool injected)
         return false;
     }
 
-    text.remove_prefix(10);
-    while (text.starts_with(' '))
-    {
-        text.remove_prefix(1);
-    }
-
-    // "/zonetrace mark stuck in jeuno" labels the moment in the log
-    if (text.starts_with("mark"))
-    {
-        text.remove_prefix(4);
-        while (text.starts_with(' '))
-        {
-            text.remove_prefix(1);
-        }
-
-        log_.line(timestamp() + " ===== MARK " + std::string(text) + " =====");
-    }
-
     if (core_ != nullptr && core_->GetChatManager() != nullptr)
     {
         core_->GetChatManager()->Writef(0, false, "\x1E\x51[zonetrace]\x1E\x01 logging to %s", log_.path().c_str());

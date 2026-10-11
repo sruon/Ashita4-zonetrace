@@ -37,7 +37,7 @@ Lines to look for:
   - `malformed`: bad size or does not decompress.
   - `old datagram`: sequence not newer than the last accepted one (only checked in state 3).
   - `empty packet`, `old sub-packet`: sub-packet of size 0, or sync not newer than the last accepted datagram.
-  - `no handler`: packet the game does not handle. Common in normal play, never logged on its own.
+  - `no handler`: packet the game has no handler for.
 
 Times are local, the first line of each log has the UTC offset.
 
@@ -59,7 +59,7 @@ Copy `zonetrace.dll` into Ashita's `polplugins` folder and enable it in the boot
 zonetrace = 1
 ```
 
-Logs go to `polplugins\logs\zonetrace_<date>_<time>_<pid>.log`, one per game process. `/zonetrace mark <text>` adds a labelled line.
+Logs go to `polplugins\logs\zonetrace_<date>_<time>_<pid>.log`, one per game process. `/zonetrace` prints the log's path.
 
 ## Build
 

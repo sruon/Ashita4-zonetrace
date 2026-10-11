@@ -9,6 +9,8 @@ ashita_sdk_initialize()
 
 add_library(zonetrace MODULE
     "src/exports.def"
+    "src/key.cpp"
+    "src/key.hpp"
     "src/log.cpp"
     "src/log.hpp"
     "src/memory.cpp"
@@ -16,6 +18,8 @@ add_library(zonetrace MODULE
     "src/plugin.cpp"
     "src/port.cpp"
     "src/port.hpp"
+    "src/recv.cpp"
+    "src/recv.hpp"
     "src/sockets.cpp"
     "src/sockets.hpp"
 )

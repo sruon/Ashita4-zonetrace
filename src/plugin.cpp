@@ -1,6 +1,8 @@
+#include "key.hpp"
 #include "log.hpp"
 #include "memory.hpp"
 #include "port.hpp"
+#include "recv.hpp"
 #include "sockets.hpp"
 
 #include "Ashita.h"
@@ -111,7 +113,7 @@ namespace zonetrace
 
         double GetVersion(void) const override
         {
-            return 1.0;
+            return 1.2;
         }
 
         uint32_t GetFlags(void) const override
@@ -131,7 +133,7 @@ namespace zonetrace
                 return false;
             }
 
-            log_.line(timestamp() + " zonetrace 1.0, " + clock());
+            log_.line(timestamp() + " zonetrace 1.2, " + clock());
 
             // POL plugins load before polcore and the game; both unpack themselves, so keep trying until the hooks take
             stop_    = false;
@@ -139,10 +141,16 @@ namespace zonetrace
                 // a module that is loaded but offers nothing to hook for this long is not going to
                 constexpr int kAttempts = 500;
 
-                int portMisses   = 0;
-                int socketMisses = 0;
-                bool ports       = false;
-                bool sockets     = false;
+                int portMisses    = 0;
+                int socketMisses  = 0;
+                int keyMisses     = 0;
+                int counterMisses = 0;
+                int recvMisses    = 0;
+                bool ports        = false;
+                bool sockets      = false;
+                bool keys         = false;
+                bool counters     = false;
+                bool recvs        = false;
                 while (!stop_)
                 {
                     if (!ports && portMisses < kAttempts)
@@ -161,10 +169,37 @@ namespace zonetrace
                             log_.line(timestamp() + " socket cannot hook the game's sockets: another plugin (polsniff) already hooked them");
                     }
 
+                    if (!keys && keyMisses < kAttempts)
+                    {
+                        const auto attempt = key::install(&write);
+                        keys               = attempt == Attempt::Hooked;
+                        if (attempt == Attempt::NotFound && ++keyMisses == kAttempts)
+                            log_.line(timestamp() + " key    cannot find polcore's session key value: client updated");
+                    }
+
+                    if (!counters && counterMisses < kAttempts)
+                    {
+                        const auto attempt = key::installCounter(&write);
+                        counters           = attempt == Attempt::Hooked;
+                        if (attempt == Attempt::NotFound && ++counterMisses == kAttempts)
+                            log_.line(timestamp() + " key    cannot find FFXiMain's zone key counter: client updated");
+                    }
+
+                    if (!recvs && recvMisses < kAttempts)
+                    {
+                        const auto attempt = recv::install(&write);
+                        recvs              = attempt == Attempt::Hooked;
+                        if (attempt == Attempt::NotFound && ++recvMisses == kAttempts)
+                            log_.line(timestamp() + " recv   cannot find FFXiMain's zone object: client updated");
+                    }
+
                     port::poll();
+                    key::poll();
+                    recv::poll();
+                    sockets::poll();
                     identify();
 
-                    const auto waiting = (!ports && portMisses < kAttempts) || (!sockets && socketMisses < kAttempts);
+                    const auto waiting = (!ports && portMisses < kAttempts) || (!sockets && socketMisses < kAttempts) || (!keys && keyMisses < kAttempts) || (!counters && counterMisses < kAttempts) || (!recvs && recvMisses < kAttempts);
                     std::this_thread::sleep_for(std::chrono::milliseconds(waiting ? 20 : 500));
                 }
             });
@@ -228,7 +263,16 @@ namespace zonetrace
 
             Identity identity{};
             if (!readIdentity(core_, &identity))
+            {
+                // answered but nothing loads: the game is dropping answers it cannot decrypt
+                if (connection != warnedConnection_ && ::GetTickCount64() - seenAt_ > 15000)
+                {
+                    warnedConnection_ = connection;
+                    log_.line(timestamp() + " char   zone-in answered 15 s ago but no character loaded");
+                    recv::report();
+                }
                 return;
+            }
 
             // the zone id updates a moment after the server answers; entering a mog house never changes it
             if (identity.zone == lastZone_ && ::GetTickCount64() - seenAt_ < 2000)
@@ -243,6 +287,7 @@ namespace zonetrace
         }
 
         uint32_t loggedConnection_{};
+        uint32_t warnedConnection_{};
         uint32_t seenConnection_{};
         ULONGLONG seenAt_{};
         uint16_t lastZone_{};

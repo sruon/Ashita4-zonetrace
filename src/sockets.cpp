@@ -26,16 +26,23 @@ namespace zonetrace::sockets
         // the server normally answers every packet; this long without one means the connection is dying
         constexpr ULONGLONG kSilence = 5000;
 
+        // a zone-in normally answers within 5 s; reported while still waiting so a killed client keeps the line
+        constexpr ULONGLONG kUnanswered = 10000;
+
         struct Socket
         {
             uint16_t port{};
             std::string peer;
             ULONGLONG opened{};
             ULONGLONG lastReceive{};
+            ULONGLONG lastSend{};
             uint32_t sent{};
             uint32_t received{};
             int lastError{};
+            std::string stray; // last sender that was not the server this socket talks to
             bool silent{};
+            bool quiet{};
+            bool unanswered{};
         };
 
         LineSink sink_{};
@@ -126,6 +133,19 @@ namespace zonetrace::sockets
 
                     ++entry.sent;
 
+                    if (entry.quiet)
+                    {
+                        entry.quiet = false;
+                        emit("port %u: the game is sending again after %.1f s", entry.port, seconds(entry.lastSend, now));
+                    }
+                    entry.lastSend = now;
+
+                    if (entry.received == 0 && !entry.unanswered && now - entry.opened > kUnanswered)
+                    {
+                        entry.unanswered = true;
+                        emit("port %u: BLACK SCREEN so far, %s has not answered %u zone-in requests in %.1f s", entry.port, entry.peer.c_str(), entry.sent, seconds(entry.opened, now));
+                    }
+
                     // before the first answer the game only repeats its zone-in request
                     if (entry.received != 0 && !entry.silent && now - entry.lastReceive > kSilence)
                     {
@@ -152,6 +172,13 @@ namespace zonetrace::sockets
 
                     if (result > 0)
                     {
+                        // the game keeps only datagrams from its zone server's IP, whatever the port
+                        if (const auto source = address(from); from != nullptr && source != entry.peer && source != entry.stray)
+                        {
+                            entry.stray = source;
+                            emit("port %u: datagram from %s while talking to %s", entry.port, source.c_str(), entry.peer.c_str());
+                        }
+
                         if (entry.received == 0)
                         {
                             ++connections_;
@@ -200,6 +227,21 @@ namespace zonetrace::sockets
             return realClose(socket);
         }
     } // namespace
+
+    void poll()
+    {
+        std::lock_guard lock(mutex_);
+        const auto now = ::GetTickCount64();
+        for (auto& [socket, entry] : sockets_)
+        {
+            // in game it sends a few packets a second, so a pause means the client stalled or gave up
+            if (entry.sent != 0 && !entry.quiet && now - entry.lastSend > kSilence)
+            {
+                entry.quiet = true;
+                emit("port %u: the game has not sent anything for %.1f s (sent %u, received %u)", entry.port, seconds(entry.lastSend, now), entry.sent, entry.received);
+            }
+        }
+    }
 
     auto connections() -> uint32_t
     {

@@ -20,12 +20,39 @@ The game opens a new UDP socket for every zone. It asks PlayOnline (polcore) for
 The lines that matter when something goes wrong:
 
 - `BLACK SCREEN, <server> never answered N zone-in requests in X s` when a socket is closed without a single answer.
+- `BLACK SCREEN so far, ...` when a zone-in is still unanswered after 10 s, written while waiting so it survives the client being killed.
+- `datagram from <address> while talking to <server>`: something other than the zone server reached the socket, typically the previous zone server still sending.
+- `the game has not sent anything for X s`: the client itself stalled or gave up, as opposed to the server going quiet.
+- `zone-in answered 15 s ago but no character loaded`: answers arrive but the game cannot use them, usually a key mismatch. Compare the `key` fingerprint with the server's.
 - `nothing from <server> for X s, still sending` when the server goes quiet mid-zone, and `DISCONNECT, ...` if the game then gives up.
 - `local port N is taken`: another client on this PC holds the port, the game retries at +256.
 - `LOCAL PORT CHANGED A -> B since the previous zone`: the game came back from a different port than it left with. A server that ties the session to the client's address will not recognise it.
 - `char   Name (charid N) in zone Z`: written once per zone, to match this log against the server's.
 - `receive error 10054`: an ICMP "port unreachable" came back for something the game sent.
 - `server assigned slot N`: the server picked the port. If this changes while in game, the next zone uses a different port.
+- `session key value fingerprint XXXXXXXX`: a hash of the 16-byte value the game builds its zone cipher key from, logged whenever PlayOnline hands out a new one. The game takes the value current at character select. The value itself is never logged.
+
+- `zone key counter XXXXXXXX (+N)`: the other half of the zone cipher key. The lobby code adds 1 per lobby request and 1 per success reply, 1 per error reply only on the name check, world list, rename and GM move requests, then 2 per zone. The server cannot see it and keeps its own copy, so any lobby step it did not account for gives the game a key it cannot decrypt with. The counter is not secret: on servers that hand out no key value the whole key is constants plus this counter.
+
+- `recv   dropped N wrong key, N old datagram, ... (server sequence XXXX accepted, server acked XXXX, game at XXXX, state N)`: the game threw away packets the server sent. The game counts these itself, by reason:
+  - `wrong key`: the payload did not check out after decrypting, the server's key differs from the game's.
+  - `malformed`: bad size or the payload did not decompress.
+  - `old datagram`: the server's datagram sequence was not newer than the last one the game accepted (only checked in state 3).
+  - `empty packet`, `old sub-packet`: a sub-packet of size 0, or one whose sync is not newer than the last accepted datagram.
+  - `no handler`: a packet the game does not handle. Common in normal play, so it never triggers a line by itself.
+
+  A stream of wrong-key or old-datagram drops while stuck on the black screen names the cause. The `char` warning for a zone-in that never loads is followed by `recv   drops so far:` with the totals for that zone.
+
+For the counter, the server's value at character select is bytes 16..19 of `accounts_sessions.session_key` (little-endian), and the map adds 2 per zone. On LSB with the stock loader a clean login reads `AD5DE058` on both sides (lobby seed `AD5DE04F` plus 9 steps); after a lobby error and a retry the client is higher.
+
+To compare on the server, hash the first 16 bytes of the character's `accounts_sessions.session_key` the same way (FNV-1a, 32-bit):
+
+```python
+h = 2166136261
+for b in session_key[:16]:
+    h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+print(f"{h:08X}")
+```
 
 Times are local. The first line of each log states the time zone and its UTC offset, since server logs are usually in UTC.
 

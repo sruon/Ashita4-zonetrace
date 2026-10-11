@@ -138,7 +138,8 @@ const char* ZoneTrace::GetLink(void) const
 
 double ZoneTrace::GetVersion(void) const
 {
-    return 1.2;
+    // 1.2.3 -> 1.0203, so every release compares higher than the last
+    return ZONETRACE_VERSION_MAJOR + ZONETRACE_VERSION_MINOR / 100.0 + ZONETRACE_VERSION_PATCH / 10000.0;
 }
 
 uint32_t ZoneTrace::GetFlags(void) const
@@ -161,7 +162,7 @@ bool ZoneTrace::Initialize(IAshitaCore* core, ILogManager* logger, uint32_t id)
         return false;
     }
 
-    log_.line(timestamp() + " zonetrace 1.2, " + clock());
+    log_.line(timestamp() + " zonetrace " ZONETRACE_VERSION ", " + clock());
 
     // POL plugins load before polcore and the game; both unpack themselves, so keep trying until the hooks take
     stop_    = false;
